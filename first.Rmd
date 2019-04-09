@@ -1,0 +1,392 @@
+---
+title: "creation and merging"
+author: "Malvika Rajeev"
+date: "4/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+variables <- load_variables(2016, "acs5", cache = TRUE)
+census_api_key("365b12815192435f1c99face6ff81e67daf7c819", install = T, overwrite = T)
+
+# Neighborhood size, median income, employment rate, age/gender/race composition
+
+# income check
+# gender and age check 
+# race check
+# neighborhood size
+# education and gender
+
+
+population_vars <- paste("B01001_0", c(paste("0", 1:9 ,sep=""), 10:49) ,sep="")
+population_names <- gsub("( |!!)", "_", gsub("(Estimate!!Total!!)","",
+                                             variables$label[variables$name %in% population_vars]))
+income_vars <- paste("B06010_0", c(paste("0", 3:9, sep=""), 10:11), sep="")
+income_names <- gsub("( |!!)", "_", 
+                     gsub("(Estimate!!Total!!|\\$|,)","",
+                          variables$label[variables$name %in% income_vars]))
+
+race_vars <- paste("B03002_0", c(paste("0",2:9 ,sep=""), 10:21), sep="")
+race_names <- gsub("( |!!)", "_", 
+                   gsub("(Estimate!!Total!!|,)","",
+                        variables$label[variables$name %in% race_vars]))
+
+housing_vars <- c("B25008_002","B25008_003")
+housing_names <- gsub("( |!!)", "_", 
+                      gsub("(Estimate!!Total!!|,)","",
+                           variables$label[variables$name %in% housing_vars]))
+
+mobility_vars <- paste("B07003_0",c(paste("0", 4:9, sep=""), 10:18), sep="")
+mobility_names <- gsub("( |!!)", "_", 
+                       gsub("(Estimate!!Total!!|,)","",
+                            variables$label[variables$name %in% mobility_vars]))
+
+education_vars <- paste("B15002_0", c(paste("0", 2:9, sep=""), 10:18, 
+                                      20:35), sep="")
+education_names <- gsub("( |!!)", "_", 
+                        gsub("(Estimate!!Total!!|,)","",
+                             variables$label[variables$name %in% education_vars]))
+
+employment_vars <- paste("B17005_0", c(paste("0", 1:9, sep=""), 10:22), sep="")
+employment_names <- gsub("( |!!)", "_", 
+                         gsub("(Estimate!!Total!!|,)","",
+                              variables$label[variables$name %in% employment_vars]))
+
+of_interest <- c(population_vars, income_vars, race_vars,
+                 housing_vars, mobility_vars, education_vars, employment_vars)
+of_interest_names <- c(population_names, income_names, race_names,
+                       housing_names, mobility_names, education_names, employment_names)
+
+
+translation <- data.frame(variable=of_interest, 
+                          census_var=of_interest_names, stringsAsFactors = FALSE)
+
+create_census_data <- function(years, geography){
+  data <- data.frame()
+  for(y in years){
+    print(y)
+    data0 <- get_acs(geography = geography, 
+                     variables = of_interest , state='CA',
+                     county="San Francisco", year = y)
+    data0$year <- y
+    data <- rbind(data, data0)
+  }
+  data <- left_join(data, translation, by="variable")
+  return(data)
+}
+
+census_data_tract <- create_census_data(c(2009:2017), 'tract') # tract
+#census_data_zip <- create_census_data(c(2009:2010), 'zcta') #zip NOPE Cant filter for dif parts in the state
+census_data_block <- create_census_data(2013:2017, 'block group') # only after 2013, smaller than tracts
+
+library(reshape2)
+census_data_tract2 <- melt(census_data_tract, id.vars=c('GEOID', 'NAME', 'year', 'census_var'), 
+                           measure.vars=c('estimate'))
+
+tract_wide <- dcast(census_data_tract2, GEOID+NAME+year~census_var, mean)
+
+census_data_block2 <- melt(census_data_block, id.vars=c('GEOID', 'NAME', 'year', 'census_var'), 
+                           measure.vars=c('estimate'))
+
+block_wide <- dcast(census_data_block2, GEOID+NAME+year~census_var, mean)
+```
+
+
+
+```{r}
+
+
+library(tidyverse)
+#fn <- list.files("data/", full.names = TRUE)
+data0 <- read_csv("~/Documents/Capstone_Project/Police_Department_Incident_Reports__Historical_2003_to_May_2018.csv", col_types = cols(
+  IncidntNum = col_integer(),
+  Category = col_character(),
+  Descript = col_character(),
+  DayOfWeek = col_character(),
+  Date = col_date(format="%m/%d/%Y"),
+  Time = col_time(format = "%H:%M"),
+  PdDistrict = col_character(),
+  Resolution = col_character(),
+  Address = col_character(),
+  X = col_double(),
+  Y = col_double(),
+  Location = col_character(),
+  PdId = col_double()
+))
+
+
+names(data0)[c(10:11)] <- c("lng","lat")
+data0 <- data0[!is.na(data0$PdDistrict),]
+library(lubridate)
+data0$year <- year(data0$Date)
+
+data0 <- filter(data0, year < 2018) # keep earlier data...data dif now
+
+data1 <- read_csv("~/Documents/Capstone_Project/Police_Department_Incident_Reports__2018_to_Present.csv",
+                  col_names = c("IncidntDatetime","Date",
+                                "Time", "year",
+                                "DayOfWeek",
+                                "ReportDatetime", "RowID",
+                                "IncidntID","IncidntNum",
+                                "CADNum","ReportType",
+                                "ReportTypeDescr",
+                                "FiledOnline","IncidntCode",
+                                "Category",
+                                "Subcategory",
+                                "Descript",
+                                "Resolution", "Address",
+                                "CNN","PdDistrict","AnalysisNeighborhood",
+                                "SupervisorDistrict",
+                                "lat","lng","Location"),
+                  skip = 1,
+                  col_types = cols(
+                    .default = col_character(),
+                    IncidntDatetime = col_datetime("%Y/%m/%d %H:%M:%S %p"),
+                    Date = col_date(format = ""),
+                    Time = col_time(format = ""),
+                    year = col_integer(),
+                    ReportDatetime = col_datetime("%Y/%m/%d %H:%M:%S %p"),
+                    RowID = col_double(),
+                    IncidntID = col_integer(),
+                    IncidntNum = col_integer(),
+                    CADNum = col_integer(),
+                    CNN = col_double(),
+                    lat = col_double(),
+                    lng = col_double()
+                  ))
+
+data1 <- filter(data1, PdDistrict!="Out of SF")
+
+data1$Category <- toupper(data1$Category)
+data1$PdDistrict <- toupper(data1$PdDistrict)
+data1$Descript <- toupper(data1$Descript)
+
+## COMBINE 
+data <- full_join(data0, data1)
+
+nrow(data0) + nrow(data1) == nrow(data)
+
+## data cleaning
+data$year <- year(data$Date)
+data$month <- month(data$Date)
+data$day <- day(data$Date)
+
+white_crime=c("FRAUD", "FORGERY/COUNTERFEITING", "BAD CHECKS" , "EXTORTION", 
+              "EMBEZZLEMENT", "SUSPICIOUS OCC","BRIBERY",
+              "FORGERY AND COUNTERFEITING")
+
+blue_crime=c("VANDALISM", "LARCENY/THEFT", "STOLEN PROPERTY", "ROBBERY", 
+             "DRIVING UNDER THE INFLUENCE",  "DISORDERLY CONDUCT", "LIQUOR LAWS", 
+             "VEHICLE THEFT", "ASSAULT", "KIDNAPPING", "TRESPASS", 
+             "ARSON", "RECOVERED VEHICLE", "BURGLARY", "LARCENY THEFT",
+             "TRAFFIC VIOLATION ARREST", "MOTOR VEHICLE THEFT", "MOTOR VEHICLE THEFT?",
+             "VEHICLE IMPOUNDED","VEHICLE MISPLACED")
+
+sex_crime=c("SEX OFFENSES NON FORCIBLE", "SEX OFFENSES FORCIBLE", 
+            "SEX OFFENSES, NON FORCIBLE", "SEX OFFENSES, FORCIBLE",
+            "PROSTITUTION", "RAPE", "HUMAN TRAFFICKING, COMMERCIAL SEX ACTS",
+            "HUMAN TRAFFICKING (A), COMMERCIAL SEX ACTS",
+            "SEX OFFENSE")
+
+drug_crime <- c("DRUG OFFENSE","DRUG/NARCOTIC",
+                "DRUG VIOLATION")
+
+other_crime=c("MISSING PERSON", "RUNAWAY", "FAMILY OFFENSES", 
+              "PORNOGRAPHY/OBSCENE MAT", "WEAPON LAWS", "DRUNKENNESS", "SUICIDE", 
+              "TREA",  "LOITERING",
+              "OTHER OFFENSES", "NON-CRIMINAL", "GAMBLING", "WARRANTS",
+              "SECONDARY CODES", "OTHER MISCELLANEOUS",
+              "MALICIOUS MISCHIEF", "MISCELLANEOUS INVESTIGATION",
+              "LOST PROPERTY", "VEHICLE IMPOUNDED", "OTHER", "JUVENILE OFFENSES",
+              "OFFENCES AGAINST THE FAMILY AND CHILDREN", "WEAPONS CARRYING ETC",
+              "WARRANT", "HOMICIDE",
+              "WEAPONS OFFENCE", "COURTESY REPORT", "FIRE REPORT",
+              "TRAFFIC COLLISION", "FAMILY OFFENSE", "WEAPONS OFFENSE",
+              "CASE CLOSURE", "CIVIL SIDEWALKS", "SUSPICIOUS")
+
+data$CatDesc <- ifelse(data$Category %in% white_crime, "WhiteCollar",
+                       ifelse(data$Category %in% blue_crime, "BlueCollar", 
+                              ifelse(data$Category %in% drug_crime, "Drug", 
+                                     ifelse(regexpr("DRUG", data$Descript) != -1 &
+                                              regexpr("SEXUAL ASSAULT", data$Descript) == -1 , "Drug", # without word sexual assualt
+                                            ifelse(data$Category %in% other_crime, "Other", 
+                                                   ifelse(data$Category %in% sex_crime, "SexCrime",
+                                                    NA))))))
+
+
+```
+
+
+
+```{r}
+
+census <- tract_wide[c(1,3,4, 5, 45, 59, 63, 69, 74, 76, 82:92, 116, 122, 140, 144:150)]
+##CAN INCLUDE OTHER CATEOGORIES if u wish.
+
+
+library(tigris)
+options(tigris_use_cache = TRUE)
+library(sp)
+
+## everything the same after 2010
+join_mapLook<- function(data, tract_map, block_map){
+  
+  data1 = data[,c("lng","lat")]
+  spatial_data  <- SpatialPointsDataFrame(coordinates(data1), data)
+  
+  proj4string(spatial_data) <- proj4string(tract_map)
+  data$GEOID_tract <-  over(spatial_data, tract_map, returnList=FALSE)$GEOID # just grab geoid
+  
+  proj4string(spatial_data) <- proj4string(block_map)
+  data$GEOID_block <-  over(spatial_data, block_map, returnList=FALSE)$GEOID # just grab geoid
+  return(data)
+}
+
+mapLookup <-  function(data){
+  mapped_data <- data.frame()
+  tract_map <- tracts(state = "CA", county='San Francisco', cb =TRUE, year = 2016)
+  block_map <- block_groups(state = "CA", county='San Francisco', cb =TRUE, year = 2016)
+  
+  for(y in 2010:2018){
+    print(y)
+    data0 = data %>% filter(year==y) %>% drop_na(lat, lng)
+    mapped_data <- rbind(mapped_data, join_mapLook(data0, tract_map, block_map))
+  }
+  return(mapped_data)
+}
+
+mapped_data  <-  mapLookup(data)
+
+library(datetime)
+library(data.table)
+library(anytime)
+library(lubridate)
+
+k <- mapped_data 
+k <- as.data.table(k)
+
+k[, td := paste(Date, Time, sep = " ")]
+
+##sort by date.
+
+d <- k[order(k$td),]
+
+d$Date <- as.Date(d$Date,"%m/%d/%Y")
+d[, `:=`(Year = year(Date),
+         Month = month(Date),
+         Hour = hour(Date))]
+
+dc <- d[, .N, by=list(Date, GEOID_tract, Category)]
+dc2 <- d[, .N, by=list(Date, GEOID_tract)]
+dc$year <- year(dc$Date)
+
+names(dc) <- c("date", "GEOID", "Category", "N", "year")
+
+count <- merge(dc, census, by =c("year","GEOID"))
+
+
+##So now something like this makes sense
+
+
+
+
+
+```
+
+
+##starting with YEARLY AGGREGATED data and not differentiating crime category
+
+```{r}
+
+yearly_basic <- d[, .N, by=list(year, GEOID_tract)]
+names(yearly_basic) <- c("year", "GEOID", "N")
+
+#merge with yearly census data
+
+yearly_c <- merge(yearly_basic, census, by = c("year", "GEOID"))
+yearly_c$rate <- (yearly_c$N / yearly_c$Estimate_Total) * 100000
+
+
+##get 2018 crime rate by block
+crime2018 <- yearly_basic[yearly_basic$year == 2018]
+
+##assume 2017 values for 2018
+census_tract_2018 <- as.data.table(filter(census, year == 2017))
+
+
+##get list of all tracts
+tracts <- unique(count$GEOID)
+
+library(ridge)
+
+predictor <- function(ridge = TRUE, geoid, y, classifiers) {
+  tract_2018 <- crime2018[geoid, on=.(GEOID)]
+  for (x in classifiers){
+    tract_2018[[x]] = census_tract_2018[geoid, on=.(GEOID)][[x]]
+  }
+  
+  trainingdat <- yearly_c[geoid, on=.(GEOID)]
+  
+  
+  require(ridge)
+  if (ridge){
+    lr <- linearRidge(
+      as.formula(paste(y, "~",
+                       paste0(classifiers, collapse = "+"),
+                       sep = ""
+      )),
+      trainingdat)
+  }
+  else {
+    lr <- lm(
+      as.formula(paste(y, "~",
+                       paste0(classifiers, collapse = "+"),
+                       sep = ""
+      )),
+      trainingdat)
+  }
+  print(summary(lr))
+  predicted_val <- predict(lr, tract_2018)
+  actual_val <- tract_2018$N
+  
+  return(list(predicted_val = predicted_val, actual_val = actual_val))
+}
+
+
+```
+
+
+#JUDGING ACCURACY
+
+```{r}
+
+##judging accuracy of prediction
+
+##let us assume the classifiers are
+#Working_class_income
+#Same_house_1_year_ago
+#Male population
+
+
+
+create_prediction_table <- function(classifiers){
+  accuracy <- list()
+  for (tract in tracts){
+    k <- predictor(TRUE, tract, 'N', classifiers)
+    accuracy[[tract]] <- c(k[1], k[2])
+  }
+    accuracy <- do.call(rbind, accuracy)
+    accuracy <- as.data.table(accuracy)
+    rownames(accuracy) <- tracts
+    return(accuracy)
+}
+
+classifiers <- c(names(count)[c(30, 27, 13)])
+create_prediction_table(classifiers)
+```
