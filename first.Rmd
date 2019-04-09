@@ -323,8 +323,8 @@ census_tract_2018 <- as.data.table(filter(census, year == 2017))
 ##get list of all tracts
 tracts <- unique(count$GEOID)
 
-library(ridge)
 
+##main function 
 predictor <- function(ridge = TRUE, geoid, y, classifiers) {
   tract_2018 <- crime2018[geoid, on=.(GEOID)]
   for (x in classifiers){
@@ -341,7 +341,8 @@ predictor <- function(ridge = TRUE, geoid, y, classifiers) {
                        paste0(classifiers, collapse = "+"),
                        sep = ""
       )),
-      trainingdat)
+      trainingdat, lambda = 0.5)
+    pval <- summary(lr)$summaries$summary2$coefficients[-1,5]
   }
   else {
     lr <- lm(
@@ -350,12 +351,12 @@ predictor <- function(ridge = TRUE, geoid, y, classifiers) {
                        sep = ""
       )),
       trainingdat)
+    pval <- summary(lr)$coeff[-1,4]
   }
-  print(summary(lr))
   predicted_val <- predict(lr, tract_2018)
   actual_val <- tract_2018$N
   
-  return(list(predicted_val = predicted_val, actual_val = actual_val))
+  return(list(predicted_val = predicted_val, actual_val = actual_val, pval = pval))
 }
 
 
@@ -391,4 +392,62 @@ create_prediction_table <- function(t, classifiers){
 
 classifiers <- c(names(count)[c(30, 27, 13)])
 create_prediction_table(TRUE,classifiers)
+
+
+
+
+classifiers <- c(names(count)[c(30, 27, 13)])
+see <- create_prediction_table(TRUE,classifiers)
+see2 <- create_prediction_table(FALSE, classifiers)
+
+
+library(ggplot2)
+first_ridge <- ggplot(see, mapping = aes(x = predicted, y = actual)) +
+        geom_point(color="blue") +
+        geom_abline(intercept = 0, slope = 1) +
+  labs(title = "Ridge Regression", 
+       x = "Predicted Crime Counts Per Census Tract",
+       y = "Actual Tract Counts till early Dec") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+ggsave("~/Documents/Capstone_Project/prediction1.png", first_ridge)
+
+first_ols <- ggplot(see2, mapping = aes(x = predicted, y = actual)) +
+  geom_point(color="red") +
+  geom_abline(intercept = 0, slope = 1) +
+  labs(title = "Ordinary Least Squares", 
+       x = "Predicted Crime Counts Per Census Tract",
+       y = "Actual Tract Counts till early Dec") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+ggsave("~/Documents/Capstone_Project/prediction2.png", first_ols)
+
+
+
+
+
+
+
+
+
+
+
+
+u <- see
+u$ols <- see2$predicted
+u$diff <- abs(u$ols - u$predicted)
+
+diff <- ggplot(u, aes(x = u$diff, y = u$GEOID)) +
+  geom_point(shape = 21, colour = "black", fill = "yellow", size = 1) +
+  labs(x = "difference in ols and ridge estimates", y = "GEOID tract") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+ggsave("~/Documents/Capstone_Project/diff_ols_ridge.png", diff)
+```
 ```
