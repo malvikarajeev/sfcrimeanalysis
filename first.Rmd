@@ -375,18 +375,20 @@ predictor <- function(ridge = TRUE, geoid, y, classifiers) {
 
 
 
-create_prediction_table <- function(classifiers){
-  accuracy <- list()
-  for (tract in tracts){
-    k <- predictor(TRUE, tract, 'N', classifiers)
-    accuracy[[tract]] <- c(k[1], k[2])
+create_prediction_table <- function(t, classifiers){
+  d <- NULL
+  l <- length(tracts)
+  for (i in 1:l){
+    k <- predictor(t, tracts[i], 'N', classifiers)
+    d <- rbind(d, data.frame(k$predicted_val[[1]], k[[2]]))
   }
-    accuracy <- do.call(rbind, accuracy)
-    accuracy <- as.data.table(accuracy)
-    rownames(accuracy) <- tracts
-    return(accuracy)
+  
+  accuracy <- as.data.table(d)
+  accuracy$GEOID <- tracts
+  colnames(accuracy) <- c("predicted","actual", "GEOID")
+  return(accuracy)
 }
 
 classifiers <- c(names(count)[c(30, 27, 13)])
-create_prediction_table(classifiers)
+create_prediction_table(TRUE,classifiers)
 ```
